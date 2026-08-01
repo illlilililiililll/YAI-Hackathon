@@ -1,0 +1,174 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: #f5f2ea;
+  color: #172554;
+  font-family: Charter, Georgia, serif;
+  line-height: 1.7;
+}
+
+.preview-shell {
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 32px 22px 56px;
+}
+
+.preview-warning {
+  padding: 13px 16px;
+  border: 1px solid #b45309;
+  border-radius: 12px;
+  background-color: #fffbeb;
+  color: #92400e;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.preview-warning p {
+  margin: 0;
+}
+
+.signal-warning {
+  margin-top: 12px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  background-color: #e0f2fe;
+  color: #0c4a6e;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.signal-warning p {
+  margin: 0;
+}
+
+.preview-hero,
+.preview-media,
+.preview-section,
+.disabled-cta,
+.preview-footer {
+  margin-top: 20px;
+  padding: 30px;
+  border: 1px solid #d7dce8;
+  border-radius: 20px;
+  background-color: #ffffff;
+}
+
+.preview-media {
+  padding: 0;
+  overflow: hidden;
+}
+
+.preview-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.preview-media-caption {
+  margin: 0;
+  padding: 10px 16px 12px;
+  background-color: #ffffff;
+  color: #64748b;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+}
+
+.brand-line {
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.brand-line {
+  margin: 0 0 12px;
+  color: #1d4ed8;
+}
+
+.preview-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 42px;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
+}
+
+.preview-deck {
+  margin: 16px 0 0;
+  color: #475569;
+  font-size: 19px;
+}
+
+.preview-intro,
+.section-copy,
+.cta-copy,
+.cta-note,
+.ai-disclosure {
+  margin: 16px 0 0;
+}
+
+.section-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 26px;
+  line-height: 1.3;
+}
+
+.disabled-cta {
+  border-color: #93c5fd;
+  background-color: #eff6ff;
+}
+
+.cta-disabled-label {
+  display: inline-block;
+  margin-top: 18px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background-color: #cbd5e1;
+  color: #475569;
+  font-family: Arial, sans-serif;
+  font-weight: 700;
+}
+
+.cta-note,
+.ai-disclosure {
+  color: #64748b;
+}
+
+.preview-footer {
+  padding: 22px;
+}
+
+.preview-footer .preview-warning {
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .preview-shell {
+    padding: 18px 14px 36px;
+  }
+
+  .preview-hero,
+  .preview-media,
+  .preview-section,
+  .disabled-cta,
+  .preview-footer {
+    padding: 22px;
+  }
+
+  .preview-media {
+    padding: 0;
+  }
+
+  .preview-title {
+    font-size: 32px;
+  }
+}

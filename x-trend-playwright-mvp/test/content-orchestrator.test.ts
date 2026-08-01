@@ -20,6 +20,11 @@ type Artifacts = PipelineArtifactMap & {
   render: string;
 };
 
+type PreviewArtifacts = {
+  draft: string;
+  render: string;
+};
+
 function livePorts(): ContentPipelinePorts<Artifacts> {
   return {
     signals: {
@@ -116,6 +121,104 @@ describe("ContentOrchestrator", () => {
     expect(result.status).toBe("failed");
     expect(result.errorCode).toBe("non_live_publish_forbidden");
     expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("keeps the normal verified path fail-closed when evidence is insufficient", async () => {
+    const ports = livePorts();
+    const draft = vi.fn(ports.writer.draft);
+    const persist = vi.fn(ports.output.persist);
+    ports.evidence.verify = async () => ({
+      outcome: "needs_evidence",
+      code: "evidence_not_sufficient",
+    });
+    ports.writer.draft = draft;
+    ports.output.persist = persist;
+    const orchestrator = new ContentOrchestrator({
+      runId: "run_00000000-0000-4000-8000-000000000001",
+      request: {
+        schemaVersion: "1.0",
+        domain: "travel",
+        locale: "ko-KR",
+        seedKeyword: "여행",
+      },
+      ports,
+      rawEvents: new RawEventIngress({
+        runId: "run_00000000-0000-4000-8000-000000000001",
+        secrets: ["secret"],
+        port: new InMemoryRawEventPort(),
+      }),
+      wallClockMs: 5_000,
+    });
+
+    const result = await orchestrator.run();
+    expect(result.status).toBe("needs_evidence");
+    expect(result.errorCode).toBe("evidence_not_sufficient");
+    expect(draft).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("runs the live signal path and commits an isolated unverified preview without RunStore", async () => {
+    const base = livePorts();
+    const publishPersist = vi.fn(base.output.persist);
+    const previewPersist = vi.fn(async () => ({
+      outcome: "unverified_preview_ready" as const,
+      previewDirectory: "/tmp/preview-run",
+      executionMode: "live" as const,
+      provenanceMode: "replay" as const,
+      warningCodes: ["external_evidence_verification_skipped"],
+      publishable: false as const,
+    }));
+    const ports: ContentPipelinePorts<Artifacts, PreviewArtifacts> = {
+      ...base,
+      output: { persist: publishPersist },
+      unverifiedPreview: {
+        draft: async () => ({ outcome: "ok", value: "preview-draft", provenanceMode: "replay" }),
+        render: async ({ draft }) => ({
+          outcome: "ok",
+          value: `${draft}-rendered`,
+          provenanceMode: "replay",
+        }),
+        persist: previewPersist,
+      },
+    };
+    const orchestrator = new ContentOrchestrator<Artifacts, PreviewArtifacts>({
+      runId: "run_00000000-0000-4000-8000-000000000001",
+      request: {
+        schemaVersion: "1.0",
+        domain: "travel",
+        locale: "ko-KR",
+        seedKeyword: "유럽 패키지 여행",
+      },
+      ports,
+      rawEvents: new RawEventIngress({
+        runId: "run_00000000-0000-4000-8000-000000000001",
+        secrets: ["secret"],
+        port: new InMemoryRawEventPort(),
+      }),
+      wallClockMs: 5_000,
+    });
+
+    const result = await orchestrator.run();
+    expect(result).toMatchObject({
+      status: "unverified_preview_ready",
+      previewDirectory: "/tmp/preview-run",
+      executionMode: "live",
+      provenanceMode: "replay",
+      publishable: false,
+    });
+    expect(result.stageHistory).toEqual([
+      "validating_input",
+      "collecting_x",
+      "clustering_topics",
+      "evaluating_google",
+      "selecting_topic",
+      "drafting_unverified_preview",
+      "rendering_unverified_preview",
+      "persisting_unverified_preview",
+      "unverified_preview_ready",
+    ]);
+    expect(previewPersist).toHaveBeenCalledOnce();
+    expect(publishPersist).not.toHaveBeenCalled();
   });
 
   it("consumes a fake SDK stream through the same raw ingress", async () => {

@@ -6,6 +6,7 @@ import {
   BrowserRuntime,
   type BrowserMcpServer,
 } from "./browser-runtime.js";
+import type { BrowserOperationEnvelope } from "./content-domain.js";
 import {
   CausalPlaywrightGoogleTrendsAdapter,
   createGoogleTrendsPlaywrightMcpServer,
@@ -26,6 +27,7 @@ export type DefaultPlaywrightSignalRuntimeOptions = {
   googleProfileDirectory?: string;
   googleOutputBaseDirectory?: string;
   browserRuntime?: BrowserRuntime;
+  onOperation?: (operation: BrowserOperationEnvelope) => void;
   outputDirectoryForLease?: (leaseId: string) => string;
   selection?: SignalProviderRuntimeSelection;
 };
@@ -84,6 +86,7 @@ export function createDefaultPlaywrightSignalRuntime(
           outputDirectory,
         }) as unknown as BrowserMcpServer;
       },
+      onOperation: options.onOperation,
     });
 
   const xAdapter = new PlaywrightXSignalAdapter({ runtime: browserRuntime });

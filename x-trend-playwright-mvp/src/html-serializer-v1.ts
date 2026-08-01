@@ -35,6 +35,13 @@ const ALLOWED_TAGS = new Set([
   "time",
 ]);
 const VOID_TAGS = new Set(["meta", "link"]);
+const PREVIEW_ALLOWED_TAGS = new Set([
+  ...ALLOWED_TAGS,
+  "figure",
+  "figcaption",
+  "img",
+]);
+const PREVIEW_VOID_TAGS = new Set([...VOID_TAGS, "img"]);
 
 export function htmlText(value: string): HtmlTextNodeV1 {
   return { kind: "text", value };
@@ -56,8 +63,13 @@ function escapeAttribute(value: string): string {
   return escapeText(value).replace(/"/gu, "&quot;").replace(/'/gu, "&#39;");
 }
 
-function serializeElement(node: HtmlElementNodeV1, depth: number): string[] {
-  if (!ALLOWED_TAGS.has(node.tag) || !/^[a-z][a-z0-9]*$/u.test(node.tag)) {
+function serializeElement(
+  node: HtmlElementNodeV1,
+  depth: number,
+  allowedTags: ReadonlySet<string>,
+  voidTags: ReadonlySet<string>,
+): string[] {
+  if (!allowedTags.has(node.tag) || !/^[a-z][a-z0-9]*$/u.test(node.tag)) {
     throw new Error(`HTML tag가 허용되지 않습니다: ${node.tag}`);
   }
   const attributes = Object.entries(node.attributes ?? {}).sort(([left], [right]) =>
@@ -73,7 +85,7 @@ function serializeElement(node: HtmlElementNodeV1, depth: number): string[] {
     .join("");
   const indentation = "  ".repeat(depth);
   const children = node.children ?? [];
-  if (VOID_TAGS.has(node.tag)) {
+  if (voidTags.has(node.tag)) {
     if (children.length > 0) {
       throw new Error(`void element에는 child를 둘 수 없습니다: ${node.tag}`);
     }
@@ -92,7 +104,7 @@ function serializeElement(node: HtmlElementNodeV1, depth: number): string[] {
   }
   const lines = [`${indentation}<${node.tag}${attributeText}>`];
   for (const child of children) {
-    lines.push(...serializeElement(child as HtmlElementNodeV1, depth + 1));
+    lines.push(...serializeElement(child as HtmlElementNodeV1, depth + 1, allowedTags, voidTags));
   }
   lines.push(`${indentation}</${node.tag}>`);
   return lines;
@@ -102,5 +114,17 @@ export function serializeHtmlDocumentV1(root: HtmlElementNodeV1): string {
   if (root.tag !== "html") {
     throw new Error("HTML document root는 html element여야 합니다.");
   }
-  return `<!doctype html>\n${serializeElement(root, 0).join("\n")}\n`;
+  return `<!doctype html>\n${serializeElement(root, 0, ALLOWED_TAGS, VOID_TAGS).join("\n")}\n`;
+}
+
+export function serializePreviewHtmlDocumentV1(root: HtmlElementNodeV1): string {
+  if (root.tag !== "html") {
+    throw new Error("HTML document root는 html element여야 합니다.");
+  }
+  return `<!doctype html>\n${serializeElement(
+    root,
+    0,
+    PREVIEW_ALLOWED_TAGS,
+    PREVIEW_VOID_TAGS,
+  ).join("\n")}\n`;
 }

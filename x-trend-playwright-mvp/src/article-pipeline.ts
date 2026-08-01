@@ -12,6 +12,10 @@ import {
   assembleArticleDraft,
   type AssembleArticleDraftInput,
 } from "./draft-assembler.js";
+import {
+  CommercialContextV1Schema,
+  type CommercialContextV1,
+} from "./commercial-context.js";
 import { researchEvidence } from "./evidence-agent.js";
 import { fetchSourcePage } from "./source-fetch.js";
 import {
@@ -33,6 +37,7 @@ import {
   ContentOrchestrator,
   type ContentPipelinePorts,
   type PipelineArtifactMap,
+  type UnverifiedPreviewArtifactMap,
 } from "./content-orchestrator.js";
 import { evaluateGooglePreemptionStage } from "./google-preemption-stage.js";
 import {
@@ -59,8 +64,22 @@ import { clusterTopicCandidates, expandTravelQueries, requireViableCandidates } 
 import { UndiciPinnedSourceTransport } from "./undici-pinned-source-transport.js";
 import { loadWriterPersona } from "./writer-persona.js";
 import { createDefaultPlaywrightSignalRuntime } from "./playwright-signal-runtime.js";
+import {
+  projectBrowserOperationLog,
+  writeArticleProgress,
+} from "./article-progress.js";
 import { canonicalJson, sha256Canonical } from "./canonical-json.js";
 import { createArticleWriterInput, writeArticleDraft } from "./article-agent.js";
+import {
+  OpenAiUnverifiedPreviewDraftProvider,
+  writeUnverifiedPreviewDraft,
+  type UnverifiedPreviewDraftV1,
+} from "./unverified-preview-agent.js";
+import {
+  renderUnverifiedPreview,
+  type UnverifiedPreviewRenderResult,
+} from "./unverified-preview-renderer.js";
+import { UnverifiedPreviewStore } from "./unverified-preview-store.js";
 
 type SelectionArtifact = {
   keywordSelection: KeywordSelection;
@@ -84,6 +103,21 @@ type QualityArtifact = DraftArtifact & {
   evidence: EvidenceResearchResultV1;
 };
 type RenderArtifact = QualityArtifact & { render: StaticRenderResultV1; previewDirectory: string };
+
+type UnverifiedPreviewDraftArtifact = {
+  draft: UnverifiedPreviewDraftV1;
+  brief: ContentBrief;
+  warningCodes: string[];
+};
+
+type UnverifiedPreviewRenderArtifact = UnverifiedPreviewDraftArtifact & {
+  render: UnverifiedPreviewRenderResult;
+};
+
+type ArticleUnverifiedPreviewArtifacts = UnverifiedPreviewArtifactMap & {
+  draft: UnverifiedPreviewDraftArtifact;
+  render: UnverifiedPreviewRenderArtifact;
+};
 
 export type ArticlePipelineArtifacts = PipelineArtifactMap & {
   x: XSignalBatch;
@@ -198,12 +232,19 @@ async function runGoogleSignalAgent(input: {
 
 export async function createArticlePipeline(input: {
   seedKeyword: string;
+  commercialContext: CommercialContextV1;
+  unverifiedPreview?: boolean;
   projectDirectory: string;
   rawOutput?: NodeJS.WritableStream;
+  progressOutput?: NodeJS.WritableStream;
 }) {
   const projectDirectory = path.resolve(input.projectDirectory);
   const runId = `run_${randomUUID()}`;
   const generatedAt = new Date().toISOString();
+  const commercialContext = CommercialContextV1Schema.parse(input.commercialContext);
+  const executionMode = "live" as const;
+  const stageProvenanceMode: ProviderMode = "replay";
+  const progressOutput = input.progressOutput ?? process.stderr;
   const request = {
     schemaVersion: "1.0" as const,
     domain: "travel" as const,
@@ -215,15 +256,41 @@ export async function createArticlePipeline(input: {
     secrets: process.env.OPENAI_API_KEY ? [process.env.OPENAI_API_KEY] : [],
     port: new WritableRawEventPort((input.rawOutput ?? process.stderr) as NodeJS.WritableStream as import("node:stream").Writable),
   });
-  const signalRuntime = createDefaultPlaywrightSignalRuntime();
+  writeArticleProgress(progressOutput, {
+    type: "commercial_context",
+    runId,
+    executionMode,
+    provenanceMode: stageProvenanceMode,
+    searchTopic: commercialContext.search_topic.value,
+    fields: {
+      brand_name: commercialContext.brand_name,
+      brand_type: commercialContext.brand_type,
+      target_reader: commercialContext.target_reader,
+      offering: commercialContext.offering,
+      cta_goal: commercialContext.cta_goal,
+    },
+    at: generatedAt,
+  });
+  writeArticleProgress(progressOutput, {
+    type: "pipeline_stage",
+    runId,
+    stage: "validating_input",
+    executionMode,
+    provenanceMode: stageProvenanceMode,
+    at: generatedAt,
+  });
+  const signalRuntime = createDefaultPlaywrightSignalRuntime({
+    onOperation: (operation) =>
+      writeArticleProgress(progressOutput, projectBrowserOperationLog(operation)),
+  });
   const receipts = new AcquisitionReceiptStore();
   const sourcePolicy = await loadSourceHostPolicy();
   const persona = await loadWriterPersona({
-    brandName: "RoamRank",
-    brandType: "여행 정보 미디어",
-    targetReader: "검증된 최신 여행 정보를 빠르게 확인하려는 한국어 독자",
+    brandName: commercialContext.brand_name.value,
+    brandType: commercialContext.brand_type.value,
+    targetReader: commercialContext.target_reader.value,
     tone: "명확하고 친절하며 과장하지 않는 실용적 문체",
-    voiceTags: ["answer-first", "grounded", "practical"],
+    voiceTags: ["answer-first", "grounded", "practical", "conversion-aware"],
   });
   const siteLinks = createSiteLinkRegistry({
     siteOrigin: "https://example.com/",
@@ -235,7 +302,6 @@ export async function createArticlePipeline(input: {
   // registry is not complete yet. Keep the whole derived graph non-live until
   // a separately reviewed validator is wired; flipping one boolean must never
   // be enough to issue ready_to_publish.
-  const stageMode: ProviderMode = "replay";
   let latestPreviewDirectory: string | undefined;
   let pendingRepair:
     | { originalDraft: ArticleDraftV1; editableUnitIds: string[]; failureCodes: string[] }
@@ -251,6 +317,20 @@ export async function createArticlePipeline(input: {
       signal,
     });
 
+  const previewWarnings = (
+    google: GoogleArtifact,
+    selection: SelectionArtifact,
+  ): string[] => [
+    ...new Set([
+      "external_evidence_verification_skipped",
+      "publish_provenance_unverified",
+      ...(google.batch.status === "complete"
+        ? []
+        : [`google_trends_${google.batch.status}`]),
+      ...selection.keywordSelection.warningCodes,
+    ]),
+  ];
+
   const assemble = (
     draft: ArticleDraftV1,
     selection: SelectionArtifact,
@@ -260,7 +340,7 @@ export async function createArticlePipeline(input: {
       runId,
       generatedAt,
       verifiedAt: new Date().toISOString(),
-      provenanceMode: stageMode,
+      provenanceMode: stageProvenanceMode,
       draft,
       brief: selection.brief,
       persona,
@@ -269,7 +349,10 @@ export async function createArticlePipeline(input: {
       siteLinks,
     } satisfies AssembleArticleDraftInput);
 
-  const ports: ContentPipelinePorts<ArticlePipelineArtifacts> = {
+  const ports: ContentPipelinePorts<
+    ArticlePipelineArtifacts,
+    ArticleUnverifiedPreviewArtifacts
+  > = {
     signals: {
       collectX: async (context) => {
         const tools = toolsFor(context.signal);
@@ -318,20 +401,20 @@ export async function createArticlePipeline(input: {
           }
           return { outcome: "no_viable_topic", code: "x_sample_below_minimum" };
         }
-        return { outcome: "ok", value: batch, provenanceMode: stageMode };
+        return { outcome: "ok", value: batch, provenanceMode: stageProvenanceMode };
       },
       clusterTopics: async (context) => {
         const candidates = clusterTopicCandidates(
           context.x,
           context.request.seedKeyword,
-          stageMode,
+          stageProvenanceMode,
         );
         try {
           requireViableCandidates(candidates);
         } catch {
           return { outcome: "no_viable_topic", code: "x_candidate_count_below_four" };
         }
-        return { outcome: "ok", value: candidates, provenanceMode: stageMode };
+        return { outcome: "ok", value: candidates, provenanceMode: stageProvenanceMode };
       },
       evaluateGoogle: async (context) => {
         const tools = toolsFor(context.signal);
@@ -346,7 +429,7 @@ export async function createArticlePipeline(input: {
         return {
           outcome: "ok",
           value: { batch, evaluations: evaluated.evaluations, selectorInput: evaluated.selectorInput },
-          provenanceMode: stageMode,
+          provenanceMode: stageProvenanceMode,
         };
       },
       selectTopic: async (context) => {
@@ -360,7 +443,7 @@ export async function createArticlePipeline(input: {
             keywordSelection,
             brief: assembleContentBrief(keywordSelection, context.google.selectorInput),
           },
-          provenanceMode: stageMode,
+          provenanceMode: stageProvenanceMode,
         };
       },
     },
@@ -378,7 +461,7 @@ export async function createArticlePipeline(input: {
                 discovery,
                 fetchToolCallId: `fetch_${randomUUID()}`,
                 transport,
-                provenanceMode: stageMode,
+                provenanceMode: stageProvenanceMode,
                 forbiddenSecretValues: process.env.OPENAI_API_KEY ? [process.env.OPENAI_API_KEY] : [],
                 isAllowedRedirectHost: (hostname) =>
                   sourcePolicy.rules.some((rule) => rule.hostname === hostname),
@@ -394,13 +477,13 @@ export async function createArticlePipeline(input: {
         if (result.status === "source_blocked") {
           return { outcome: "source_blocked", code: result.status };
         }
-        return { outcome: "ok", value: result, provenanceMode: stageMode };
+        return { outcome: "ok", value: result, provenanceMode: stageProvenanceMode };
       },
       verify: async (context) => {
         if (context.evidence.status !== "sufficient") {
           return { outcome: "needs_evidence", code: "evidence_not_sufficient" };
         }
-        return { outcome: "ok", value: context.evidence, provenanceMode: stageMode };
+        return { outcome: "ok", value: context.evidence, provenanceMode: stageProvenanceMode };
       },
     },
     writer: {
@@ -446,7 +529,7 @@ export async function createArticlePipeline(input: {
             article: assemble(draft, context.selection, context.evidence),
             brief: context.selection.brief,
           },
-          provenanceMode: stageMode,
+          provenanceMode: stageProvenanceMode,
         };
       },
       qualityCheck: async (context) => {
@@ -473,7 +556,7 @@ export async function createArticlePipeline(input: {
         return {
           outcome: "ok",
           value: { ...context.draft, report, evidence: context.evidence },
-          provenanceMode: stageMode,
+          provenanceMode: stageProvenanceMode,
         };
       },
       render: async (context) => {
@@ -497,10 +580,159 @@ export async function createArticlePipeline(input: {
         return {
           outcome: "ok",
           value: { ...context.quality, report, render: result, previewDirectory },
-          provenanceMode: stageMode,
+          provenanceMode: stageProvenanceMode,
         };
       },
     },
+    ...(input.unverifiedPreview
+      ? {
+          unverifiedPreview: {
+            draft: async (context) => {
+              try {
+                const warningCodes = previewWarnings(
+                  context.google,
+                  context.selection,
+                );
+                const draft = await writeUnverifiedPreviewDraft(
+                  new OpenAiUnverifiedPreviewDraftProvider(),
+                  {
+                    brief: context.selection.brief,
+                    commercialContext,
+                    persona,
+                  },
+                  {
+                    signal: context.signal,
+                    onRawEvent: async (event) => {
+                      await rawEvents.accept(event);
+                    },
+                  },
+                );
+                return {
+                  outcome: "ok" as const,
+                  value: {
+                    draft,
+                    brief: context.selection.brief,
+                    warningCodes,
+                  },
+                  provenanceMode: stageProvenanceMode,
+                };
+              } catch {
+                return {
+                  outcome: "failed" as const,
+                  code: "unverified_preview_writer_failed",
+                  message: "미검증 프리뷰 초안 생성에 실패했습니다.",
+                };
+              }
+            },
+            render: async (context) => {
+              try {
+                const render = await renderUnverifiedPreview({
+                  draft: context.draft.draft,
+                  commercialContext,
+                  warningCodes: context.draft.warningCodes,
+                });
+                return {
+                  outcome: "ok" as const,
+                  value: { ...context.draft, render },
+                  provenanceMode: stageProvenanceMode,
+                };
+              } catch {
+                return {
+                  outcome: "failed" as const,
+                  code: "unverified_preview_render_failed",
+                  message: "미검증 프리뷰 렌더링에 실패했습니다.",
+                };
+              }
+            },
+            persist: async (context) => {
+              try {
+                const preview = context.render;
+                const store = new UnverifiedPreviewStore({
+                  outputRoot: path.join(projectDirectory, "output"),
+                });
+                const previewJson = jsonBytes({
+                  schemaVersion: "1.0",
+                  runId,
+                  generatedAt,
+                  executionMode,
+                  provenanceMode: stageProvenanceMode,
+                  publishable: false,
+                  verification: "skipped",
+                  personaPolicy: {
+                    snapshotId: persona.snapshotId,
+                    personaVersion: persona.personaVersion,
+                    personaDocumentSha256: persona.personaDocumentSha256,
+                    personaSnapshotSha256: persona.personaSnapshotSha256,
+                    claimRuleException: "user_authorized_preview_only",
+                  },
+                  warningCodes: preview.warningCodes,
+                  commercialContext,
+                  brief: preview.brief,
+                  draft: preview.draft,
+                  previewRevisionSha256:
+                    preview.render.previewRevisionSha256,
+                  rawJournalReceipt: context.rawJournal.receipt,
+                });
+                const signalsJson = jsonBytes({
+                  schemaVersion: "1.0",
+                  runId,
+                  generatedAt,
+                  executionMode,
+                  provenanceMode: stageProvenanceMode,
+                  x: context.artifacts.x,
+                  candidates: context.artifacts.candidates,
+                  google: context.artifacts.google,
+                  selection: context.artifacts.selection,
+                });
+                const outcome = await store.commit({
+                  runId,
+                  files: [
+                    {
+                      name: "index.html",
+                      bytes: preview.render.files[0].bytes,
+                    },
+                    {
+                      name: "styles.css",
+                      bytes: preview.render.files[1].bytes,
+                    },
+                    {
+                      name: "hero.png",
+                      bytes: preview.render.files[2].bytes,
+                    },
+                    { name: "preview.json", bytes: previewJson },
+                    { name: "signals.json", bytes: signalsJson },
+                    {
+                      name: "events.jsonl",
+                      bytes: context.rawJournal.fileBytes,
+                    },
+                    {
+                      name: "PREVIEW_ONLY.txt",
+                      bytes: new TextEncoder().encode(
+                        "PREVIEW_ONLY\n외부 근거 미검증 · 테스트 프리뷰 · 발행 금지\n외부 근거 검증을 생략했으므로 정식 발행할 수 없습니다.\n",
+                      ),
+                    },
+                  ],
+                });
+                latestPreviewDirectory = outcome.runDirectory;
+                return {
+                  outcome: "unverified_preview_ready" as const,
+                  previewDirectory: outcome.runDirectory,
+                  executionMode,
+                  provenanceMode: stageProvenanceMode,
+                  warningCodes: [...preview.warningCodes],
+                  publishable: false as const,
+                };
+              } catch {
+                return {
+                  outcome: "failed" as const,
+                  code: "unverified_preview_persist_failed",
+                  message: "미검증 프리뷰 저장에 실패했습니다.",
+                };
+              }
+            },
+          },
+        }
+      : {}),
     output: {
       persist: async (context) => {
         const render = context.artifacts.render;
@@ -512,7 +744,7 @@ export async function createArticlePipeline(input: {
               : artifactPath === "public/styles.css"
                 ? render.render.files[1].bytes
                 : artifactPath === "private/run.json"
-                  ? jsonBytes({ schemaVersion: "1.0", runId, generatedAt, request, stageMode })
+                  ? jsonBytes({ schemaVersion: "1.0", runId, generatedAt, request, executionMode, provenanceMode: stageProvenanceMode })
                   : artifactPath === "private/signals.json"
                     ? jsonBytes({ x: context.artifacts.x, candidates: context.artifacts.candidates, google: context.artifacts.google, selection: context.artifacts.selection })
                     : artifactPath === "private/evidence.json"
@@ -545,18 +777,32 @@ export async function createArticlePipeline(input: {
     },
   };
 
-  const orchestrator = new ContentOrchestrator<ArticlePipelineArtifacts>({
+  const orchestrator = new ContentOrchestrator<
+    ArticlePipelineArtifacts,
+    ArticleUnverifiedPreviewArtifacts
+  >({
     runId,
     request,
     ports,
     rawEvents,
     wallClockMs: 240_000,
     stageRetryMax: 1,
+    onTransition: (stage) =>
+      writeArticleProgress(progressOutput, {
+        type: "pipeline_stage",
+        runId,
+        stage,
+        executionMode,
+        provenanceMode: stageProvenanceMode,
+        at: new Date().toISOString(),
+      }),
   });
   return {
     orchestrator,
     runId,
     request,
     getPreviewDirectory: () => latestPreviewDirectory,
+    executionMode,
+    provenanceMode: stageProvenanceMode,
   };
 }

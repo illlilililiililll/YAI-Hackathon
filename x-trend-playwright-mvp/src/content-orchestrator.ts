@@ -22,6 +22,11 @@ export interface PipelineArtifactMap {
   render: unknown;
 }
 
+export interface UnverifiedPreviewArtifactMap {
+  draft: unknown;
+  render: unknown;
+}
+
 export type StageSuccess<T> = {
   outcome: "ok";
   value: T;
@@ -30,6 +35,12 @@ export type StageSuccess<T> = {
 
 export type StageTerminal = {
   outcome: "needs_evidence" | "no_viable_topic" | "source_blocked" | "failed";
+  code: string;
+  message?: string;
+};
+
+export type UnverifiedPreviewStageTerminal = {
+  outcome: "failed";
   code: string;
   message?: string;
 };
@@ -52,7 +63,10 @@ export type StageContext = {
   attempt: number;
 };
 
-export type ContentPipelinePorts<T extends PipelineArtifactMap> = {
+export type ContentPipelinePorts<
+  T extends PipelineArtifactMap,
+  P extends UnverifiedPreviewArtifactMap = UnverifiedPreviewArtifactMap,
+> = {
   signals: {
     collectX(context: StageContext): Promise<StageSuccess<T["x"]> | StageTerminal>;
     clusterTopics(
@@ -116,6 +130,38 @@ export type ContentPipelinePorts<T extends PipelineArtifactMap> = {
       | StageTerminal
     >;
   };
+  unverifiedPreview?: {
+    draft(
+      context: StageContext & {
+        selection: T["selection"];
+        google: T["google"];
+      },
+    ): Promise<StageSuccess<P["draft"]> | UnverifiedPreviewStageTerminal>;
+    render(
+      context: StageContext & {
+        selection: T["selection"];
+        draft: P["draft"];
+      },
+    ): Promise<StageSuccess<P["render"]> | UnverifiedPreviewStageTerminal>;
+    persist(
+      context: StageContext & {
+        artifacts: Pick<T, "x" | "candidates" | "google" | "selection">;
+        draft: P["draft"];
+        render: P["render"];
+        rawJournal: SealedRawJournal;
+      },
+    ): Promise<
+      | {
+          outcome: "unverified_preview_ready";
+          previewDirectory: string;
+          executionMode: "live";
+          provenanceMode: ProviderMode;
+          warningCodes: string[];
+          publishable: false;
+        }
+      | UnverifiedPreviewStageTerminal
+    >;
+  };
 };
 
 export type OrchestratorOutcome = {
@@ -126,12 +172,20 @@ export type OrchestratorOutcome = {
   contentRevisionSha256?: string;
   errorCode?: string;
   message?: string;
+  previewDirectory?: string;
+  executionMode?: "live";
+  provenanceMode?: ProviderMode;
+  warningCodes?: string[];
+  publishable?: false;
 };
 
-export type ContentOrchestratorOptions<T extends PipelineArtifactMap> = {
+export type ContentOrchestratorOptions<
+  T extends PipelineArtifactMap,
+  P extends UnverifiedPreviewArtifactMap = UnverifiedPreviewArtifactMap,
+> = {
   runId: string;
   request: NormalizedRequestV1;
-  ports: ContentPipelinePorts<T>;
+  ports: ContentPipelinePorts<T, P>;
   rawEvents: RawEventIngress;
   wallClockMs: number;
   stageRetryMax?: 0 | 1;
@@ -193,13 +247,16 @@ function isTerminalResult(value: { outcome: string }): value is StageTerminal {
   );
 }
 
-export class ContentOrchestrator<T extends PipelineArtifactMap> {
+export class ContentOrchestrator<
+  T extends PipelineArtifactMap,
+  P extends UnverifiedPreviewArtifactMap = UnverifiedPreviewArtifactMap,
+> {
   private current: RunStatus = "validating_input";
   private readonly history: RunStatus[] = ["validating_input"];
   private readonly provenanceModes: ProviderMode[] = [];
   private sealedRawJournal: SealedRawJournal | undefined;
 
-  constructor(private readonly options: ContentOrchestratorOptions<T>) {
+  constructor(private readonly options: ContentOrchestratorOptions<T, P>) {
     if (!Number.isInteger(options.wallClockMs) || options.wallClockMs < 1) {
       throw new Error("wallClockMs는 양의 정수여야 합니다.");
     }
@@ -335,6 +392,72 @@ export class ContentOrchestrator<T extends PipelineArtifactMap> {
         return await this.finishStageTerminal(selectionResult);
       }
       this.remember(selectionResult.provenanceMode);
+
+      const previewPorts = this.options.ports.unverifiedPreview;
+      if (previewPorts) {
+        this.transition("drafting_unverified_preview");
+        const previewDraft = await this.invokeWithRetry(signal, (attempt) =>
+          previewPorts.draft({
+            ...this.context(signal, attempt),
+            selection: selectionResult.value,
+            google: googleResult.value,
+          }),
+        );
+        if (previewDraft.outcome === "failed") {
+          return await this.finishStageTerminal(previewDraft);
+        }
+        this.remember(previewDraft.provenanceMode);
+
+        this.transition("rendering_unverified_preview");
+        const previewRender = await this.invokeWithRetry(signal, (attempt) =>
+          previewPorts.render({
+            ...this.context(signal, attempt),
+            selection: selectionResult.value,
+            draft: previewDraft.value,
+          }),
+        );
+        if (previewRender.outcome === "failed") {
+          return await this.finishStageTerminal(previewRender);
+        }
+        this.remember(previewRender.provenanceMode);
+
+        const rawJournal = await this.sealRaw();
+        this.transition("persisting_unverified_preview");
+        const previewPersist = await this.invokeWithRetry(signal, (attempt) =>
+          previewPorts.persist({
+            ...this.context(signal, attempt),
+            artifacts: {
+              x: xResult.value,
+              candidates: candidatesResult.value,
+              google: googleResult.value,
+              selection: selectionResult.value,
+            },
+            draft: previewDraft.value,
+            render: previewRender.value,
+            rawJournal,
+          }),
+        );
+        if (previewPersist.outcome === "failed") {
+          return await this.finishStageTerminal(previewPersist);
+        }
+        if (previewPersist.provenanceMode === "live") {
+          throw new OrchestratorError(
+            "unverified_preview_live_provenance_forbidden",
+            "미검증 프리뷰는 live 발행 provenance를 선언할 수 없습니다.",
+          );
+        }
+        this.transition("unverified_preview_ready");
+        return {
+          runId: this.options.runId,
+          status: "unverified_preview_ready",
+          stageHistory: [...this.history],
+          previewDirectory: previewPersist.previewDirectory,
+          executionMode: previewPersist.executionMode,
+          provenanceMode: previewPersist.provenanceMode,
+          warningCodes: [...previewPersist.warningCodes],
+          publishable: false,
+        };
+      }
 
       this.transition("researching");
       let evidenceResult = await this.invokeWithRetry(signal, (attempt) =>
@@ -526,6 +649,7 @@ export class ContentOrchestrator<T extends PipelineArtifactMap> {
       }
       if (![
         "ready_to_publish",
+        "unverified_preview_ready",
         "needs_evidence",
         "no_viable_topic",
         "source_blocked",
