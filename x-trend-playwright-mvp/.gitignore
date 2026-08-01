@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.browser-profile/
+.browser-profile-google-trends/
+.browser-downloads/
+*.yai-browser.lock
+.playwright-mcp/
+output/
+*.log
+.DS_Store

@@ -1,0 +1,9 @@
+# Local agent and BMad artifacts
+/.agent/
+/.agents/
+/_bmad/
+/_bamd/
+/_bmad-output/
+
+# Temporary working files
+/tmp/

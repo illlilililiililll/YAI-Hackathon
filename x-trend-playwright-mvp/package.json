@@ -1,0 +1,36 @@
+{
+  "name": "x-trend-playwright-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "profile:login": "node --import tsx src/profile-login.ts",
+    "search:raw": "node --import tsx src/raw-index.ts",
+    "search": "node --import tsx src/index.ts",
+    "article": "node --import tsx src/article-index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@openai/agents": "0.14.2",
+    "@openai/agents-core": "0.14.2",
+    "@openai/agents-openai": "0.14.2",
+    "@playwright/mcp": "0.0.78",
+    "dotenv": "17.4.2",
+    "openai": "6.49.0",
+    "parse5": "8.0.1",
+    "postcss": "8.5.25",
+    "undici": "7.21.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.2",
+    "esbuild": "0.28.1",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "policyId": "hackathon-source-host-policy-v1",
+  "rules": [
+    { "hostname": "english.visitkorea.or.kr", "publisher": "Korea Tourism Organization", "tier": "A" },
+    { "hostname": "global.jr-central.co.jp", "publisher": "Central Japan Railway Company", "tier": "A" },
+    { "hostname": "japan.travel", "publisher": "Japan National Tourism Organization", "tier": "A" },
+    { "hostname": "korean.visitkorea.or.kr", "publisher": "한국관광공사", "tier": "A" },
+    { "hostname": "overseas.mofa.go.kr", "publisher": "대한민국 재외공관", "tier": "A" },
+    { "hostname": "travel.state.gov", "publisher": "U.S. Department of State", "tier": "A" },
+    { "hostname": "www.cdc.gov", "publisher": "U.S. Centers for Disease Control and Prevention", "tier": "A" },
+    { "hostname": "www.gov.uk", "publisher": "UK Government", "tier": "A" },
+    { "hostname": "www.japan.travel", "publisher": "Japan National Tourism Organization", "tier": "A" },
+    { "hostname": "www.jreast.co.jp", "publisher": "East Japan Railway Company", "tier": "A" },
+    { "hostname": "www.k-eta.go.kr", "publisher": "대한민국 법무부", "tier": "A" },
+    { "hostname": "www.mofa.go.kr", "publisher": "대한민국 외교부", "tier": "A" },
+    { "hostname": "www.tokyometro.jp", "publisher": "Tokyo Metro", "tier": "A" },
+    { "hostname": "www.visitkorea.or.kr", "publisher": "한국관광공사", "tier": "A" },
+    { "hostname": "www.westjr.co.jp", "publisher": "West Japan Railway Company", "tier": "A" },
+    { "hostname": "www.who.int", "publisher": "World Health Organization", "tier": "B" }
+  ]
+}

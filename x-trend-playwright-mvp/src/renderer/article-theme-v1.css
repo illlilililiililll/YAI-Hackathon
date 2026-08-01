@@ -1,0 +1,108 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: Georgia, serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: #17324d;
+  background-color: #f7f2e8;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.page-shell {
+  max-width: 780px;
+  margin-inline: auto;
+  padding: 48px 24px;
+}
+
+.travel-article {
+  padding: 40px;
+  background-color: #fffdf8;
+  border: 1px solid #d9cdb8;
+  border-radius: 16px;
+}
+
+.article-header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid #d9cdb8;
+}
+
+.article-title {
+  margin: 0;
+  font-size: 36px;
+  line-height: 1.25;
+  color: #102a43;
+}
+
+.article-deck {
+  margin-top: 16px;
+  font-size: 19px;
+  color: #486581;
+}
+
+.article-lead {
+  margin-top: 20px;
+}
+
+.summary-box {
+  margin-top: 32px;
+  padding: 24px;
+  background-color: #edf4f7;
+  border-radius: 12px;
+}
+
+.content-section,
+.checklist-section,
+.faq-section,
+.related-link,
+.article-cta,
+.sources-section {
+  margin-top: 36px;
+}
+
+.block-heading {
+  margin-bottom: 14px;
+  color: #0f5c66;
+}
+
+.article-paragraph,
+.supporting-copy,
+.cta-copy {
+  margin-top: 12px;
+}
+
+.summary-list,
+.checklist-list,
+.faq-list,
+#sources {
+  padding-inline: 24px;
+}
+
+.link-anchor,
+.cta-link,
+.source-link {
+  color: #0f5c66;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.article-cta {
+  padding: 24px;
+  background-color: #f4e7c5;
+  border-radius: 12px;
+}
+
+.source-item,
+.verified-row {
+  display: grid;
+  gap: 8px;
+}
+
+.article-footer {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid #d9cdb8;
+  font-size: 14px;
+  color: #627d98;
+}
