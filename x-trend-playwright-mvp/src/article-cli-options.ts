@@ -28,7 +28,9 @@ export function parseArticleCliArguments(argv: readonly string[]): ArticleCliOpt
 
   const input = inputParts.join(" ").normalize("NFC").trim();
   if (!input) {
-    throw new Error("여행 주제 또는 캠페인 문장 1개가 필요합니다.");
+    throw new Error(
+      "brand_name, brand_type, target_reader, offering, cta_goal 입력이 필요합니다.",
+    );
   }
   return Object.freeze({ unverifiedPreview, input });
 }

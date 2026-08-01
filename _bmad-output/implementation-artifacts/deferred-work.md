@@ -33,3 +33,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-hackathon-e2e-completion.md`
   summary: Source fetch의 DNS·redirect 전체를 단일 deadline으로 묶고 preflight에 Google/browser 실연결 probe를 추가한다.
   evidence: 전역 Run timeout은 있으나 개별 fetch hop 누적과 로그인·Google 화면 유효성은 첫 수집에서만 최종 확인된다.
+- source_spec: `_bmad-output/implementation-artifacts/spec-require-five-field-commercial-input.md`
+  summary: 미검증 프리뷰 draft의 safety·Persona 검증 계약과 현재 테스트 기대값을 별도 작업에서 다시 일치시킨다.
+  evidence: 전체 suite의 기존 3개 실패는 미커밋 `unverified-preview-agent.ts` 변경에서 해당 검증이 제거된 상태와 관련되며, 이번 5필드 입력 계약 변경 범위와 독립적이다.

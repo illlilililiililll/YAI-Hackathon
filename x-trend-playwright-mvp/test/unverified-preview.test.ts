@@ -31,7 +31,13 @@ const brief: ContentBriefV1 = {
 };
 
 const commercialContext = extractCommercialContext(
-  "유럽 전문 여행사가 20대 청년에게 패키지 여행상품을 소개하는 글",
+  [
+    "brand_name: 트래블메이트",
+    "brand_type: 유럽 전문 여행사",
+    "target_reader: 유럽 패키지여행을 찾는 20대 청년 여행자",
+    "offering: 유럽 패키지 여행상품",
+    "cta_goal: 문의",
+  ].join("; "),
 );
 
 const persona: PersonaSnapshotV1 = {
@@ -175,7 +181,8 @@ describe("unverified preview render and store", () => {
     const rendered = await renderUnverifiedPreview({
       draft: validDraft(),
       commercialContext: extractCommercialContext(
-        "search_topic: 일본 가족 여행; target_reader: 가족 여행자; offering: 일본 패키지 여행상품",
+        "brand_name: 트래블메이트; brand_type: 일본 전문 여행사; " +
+          "target_reader: 가족 여행자; offering: 일본 패키지 여행상품; cta_goal: 문의",
       ),
       warningCodes: [],
     });

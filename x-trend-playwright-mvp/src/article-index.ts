@@ -7,13 +7,15 @@ import { parseArticleCliArguments } from "./article-cli-options.js";
 import { inspectArticlePreflight } from "./article-preflight.js";
 import { createArticlePipeline } from "./article-pipeline.js";
 import { extractCommercialContext } from "./commercial-context.js";
-import { normalizeSeedKeyword } from "./topic-discovery.js";
 
 const projectDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage(message: string): never {
   process.stderr.write(
-    `${message}\n사용법: npm run article -- [--unverified-preview] "여행 주제 또는 캠페인 문장"\n`,
+    `${message}\n사용법: npm run article -- [--unverified-preview] ` +
+      `"brand_name: 트래블메이트; brand_type: 일본 전문 여행사; ` +
+      `target_reader: 일본 여행을 준비하는 가족; offering: 일본 패키지 여행상품; ` +
+      `cta_goal: 문의"\n`,
   );
   process.exit(2);
 }
@@ -26,7 +28,6 @@ try {
 } catch (error) {
   usage(error instanceof Error ? error.message : String(error));
 }
-const seedKeyword = normalizeSeedKeyword(commercialContext.search_topic.value);
 const preflight = await inspectArticlePreflight({ projectDirectory });
 if (!preflight.ok) {
   usage(`Preflight 실패:\n- ${preflight.errors.join("\n- ")}`);
@@ -39,7 +40,6 @@ const {
   executionMode,
   provenanceMode,
 } = await createArticlePipeline({
-  seedKeyword,
   commercialContext,
   unverifiedPreview: options.unverifiedPreview,
   projectDirectory,

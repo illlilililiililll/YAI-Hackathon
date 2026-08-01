@@ -10,10 +10,13 @@ export type ArticleProgressEvent =
       runId: string;
       executionMode: "live";
       provenanceMode: ProviderMode;
-      searchTopic: string;
-      fields: Readonly<
-        Record<string, Readonly<{ value: string; source: "explicit" | "inferred" | "default" }>>
-      >;
+      fields: Readonly<{
+        brand_name: Readonly<{ value: string; source: "explicit" }>;
+        brand_type: Readonly<{ value: string; source: "explicit" }>;
+        target_reader: Readonly<{ value: string; source: "explicit" }>;
+        offering: Readonly<{ value: string; source: "explicit" }>;
+        cta_goal: Readonly<{ value: string; source: "explicit" }>;
+      }>;
       at: string;
     }>
   | Readonly<{

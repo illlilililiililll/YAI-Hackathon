@@ -126,7 +126,7 @@ function buildDocument(
 ) {
   const ctaGoal = commercialContext.cta_goal.value;
   const showDefaultHero =
-    commercialContext.search_topic.value.includes("유럽") &&
+    commercialContext.offering.value.includes("유럽") &&
     /(?:20대|청년)/u.test(commercialContext.target_reader.value);
   const googleFallback = warningCodes.some((code) => code.startsWith("google_"));
   return element("html", { lang: "ko-KR" }, [

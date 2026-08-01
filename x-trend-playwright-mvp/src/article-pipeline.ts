@@ -60,7 +60,12 @@ import { RunStore, SUCCESS_ARTIFACT_PATHS } from "./run-store.js";
 import { createSiteLinkRegistry } from "./site-link-registry.js";
 import { loadSourceHostPolicy } from "./source-policy-gate.js";
 import { renderStaticArticle } from "./static-html-renderer.js";
-import { clusterTopicCandidates, expandTravelQueries, requireViableCandidates } from "./topic-discovery.js";
+import {
+  clusterTopicCandidates,
+  expandTravelQueries,
+  normalizeSeedKeyword,
+  requireViableCandidates,
+} from "./topic-discovery.js";
 import { UndiciPinnedSourceTransport } from "./undici-pinned-source-transport.js";
 import { loadWriterPersona } from "./writer-persona.js";
 import { createDefaultPlaywrightSignalRuntime } from "./playwright-signal-runtime.js";
@@ -231,7 +236,6 @@ async function runGoogleSignalAgent(input: {
 }
 
 export async function createArticlePipeline(input: {
-  seedKeyword: string;
   commercialContext: CommercialContextV1;
   unverifiedPreview?: boolean;
   projectDirectory: string;
@@ -249,7 +253,7 @@ export async function createArticlePipeline(input: {
     schemaVersion: "1.0" as const,
     domain: "travel" as const,
     locale: "ko-KR" as const,
-    seedKeyword: input.seedKeyword,
+    seedKeyword: normalizeSeedKeyword(commercialContext.offering.value),
   };
   const rawEvents = new RawEventIngress({
     runId,
@@ -261,7 +265,6 @@ export async function createArticlePipeline(input: {
     runId,
     executionMode,
     provenanceMode: stageProvenanceMode,
-    searchTopic: commercialContext.search_topic.value,
     fields: {
       brand_name: commercialContext.brand_name,
       brand_type: commercialContext.brand_type,

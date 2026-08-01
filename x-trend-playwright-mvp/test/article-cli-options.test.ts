@@ -1,7 +1,12 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { parseArticleCliArguments } from "../src/article-cli-options.js";
 import { projectBrowserOperationLog } from "../src/article-progress.js";
+
+const PROJECT_DIRECTORY = fileURLToPath(new URL("../", import.meta.url));
 
 describe("article CLI options", () => {
   it("keeps the preview flag out of the campaign input", () => {
@@ -24,6 +29,25 @@ describe("article CLI options", () => {
     expect(() => parseArticleCliArguments(["--publish", "유럽 여행"])).toThrow(
       /알 수 없는 옵션/u,
     );
+  });
+
+  it("rejects non-contract input before preflight or external work", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "src/article-index.ts", "일본 여행 글 작성"],
+      {
+        cwd: PROJECT_DIRECTORY,
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("key:value 형식");
+    expect(result.stderr).toContain("brand_type");
+    expect(result.stderr).not.toContain("[preflight]");
   });
 });
 
